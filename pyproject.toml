@@ -1,0 +1,17 @@
+[project]
+name = "f1telemetry"
+version = "0.1.0"
+description = "Telemetry-based anomaly detection and analytics for Formula 1 sessions, built on FastF1."
+requires-python = ">=3.12"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
