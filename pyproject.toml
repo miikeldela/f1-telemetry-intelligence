@@ -1,9 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "f1telemetry"
 version = "0.1.0"
 description = "Telemetry-based anomaly detection and analytics for Formula 1 sessions, built on FastF1."
 requires-python = ">=3.12"
 readme = "README.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 100
