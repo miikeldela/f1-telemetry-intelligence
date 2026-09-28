@@ -31,10 +31,31 @@ def load_session(year: int, gp: str, session_type: str = "R") -> fastf1.core.Ses
     return session
 
 
+def _full_telemetry_with_distance(lap) -> pd.DataFrame:
+    """Car + position telemetry (RPM/Speed/Throttle/Brake/DRS/X/Y/Z/...) for
+    one lap, with Distance guaranteed present.
+
+    Uses get_telemetry() rather than get_car_data() so DRS and X/Y/Z
+    position (needed for a derived lateral-acceleration channel) are
+    available, not just the original 5 car-data channels. Falls back to
+    car-only data if position telemetry can't be merged for this lap
+    (happens occasionally for partial/incomplete laps).
+    """
+    try:
+        telemetry = lap.get_telemetry()
+    except Exception as exc:  # noqa: BLE001 - some laps lack mergeable pos data
+        logger.warning("get_telemetry() failed (%s), falling back to get_car_data()", exc)
+        telemetry = lap.get_car_data()
+
+    if "Distance" not in telemetry.columns:
+        telemetry = telemetry.add_distance()
+    return telemetry
+
+
 def get_driver_lap_telemetry(
     session: fastf1.core.Session, driver: str, lap: str | int = "fastest"
 ) -> pd.DataFrame:
-    """Return car telemetry (with distance) for one driver's lap.
+    """Return car+position telemetry (with distance) for one driver's lap.
 
     driver: three-letter FastF1 driver code, e.g. 'VER', 'HAM'.
     lap: 'fastest' or a lap number.
@@ -45,7 +66,7 @@ def get_driver_lap_telemetry(
     else:
         target_lap = driver_laps[driver_laps["LapNumber"] == lap].iloc[0]
 
-    telemetry = target_lap.get_car_data().add_distance()
+    telemetry = _full_telemetry_with_distance(target_lap)
     telemetry["Driver"] = driver
     telemetry["LapNumber"] = target_lap["LapNumber"]
     return telemetry
@@ -65,14 +86,14 @@ def get_all_drivers_telemetry(
 
 
 def get_lap_telemetry(session: fastf1.core.Session, driver: str, lap_number: int) -> pd.DataFrame:
-    """Return car telemetry (with distance) for one specific lap."""
+    """Return car+position telemetry (with distance) for one specific lap."""
     driver_laps = session.laps.pick_driver(driver)
     matches = driver_laps[driver_laps["LapNumber"] == lap_number]
     if matches.empty:
         raise ValueError(f"No lap {lap_number} found for driver {driver}")
     target_lap = matches.iloc[0]
 
-    telemetry = target_lap.get_car_data().add_distance()
+    telemetry = _full_telemetry_with_distance(target_lap)
     telemetry["Driver"] = driver
     telemetry["LapNumber"] = lap_number
     return telemetry
@@ -97,7 +118,7 @@ def get_all_laps_telemetry(
         for _, lap in driver_laps.iterlaps():
             lap_number = lap["LapNumber"]
             try:
-                telemetry = lap.get_car_data().add_distance()
+                telemetry = _full_telemetry_with_distance(lap)
                 telemetry["Driver"] = driver
                 telemetry["LapNumber"] = lap_number
                 frames.append(telemetry)

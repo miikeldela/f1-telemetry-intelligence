@@ -4,6 +4,10 @@ Usage:
     python -m f1telemetry.data.ingest 2024 Bahrain --session R --mode full --out data/raw/telemetry_full.parquet
     python -m f1telemetry.models.train_lstm data/raw/telemetry_full.parquet
 
+    # Override the default channel set (e.g. for a channel-ablation sweep):
+    python -m f1telemetry.models.train_lstm data/raw/telemetry_full.parquet \
+        --channels Speed Throttle Brake nGear RPM LateralAcceleration
+
 Then inspect runs with:
     mlflow ui
 """
@@ -13,6 +17,7 @@ import argparse
 
 import mlflow
 import mlflow.pytorch
+import mlflow.sklearn
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
@@ -44,20 +49,35 @@ def _main() -> None:
     parser.add_argument("--hidden-size", type=int, default=32)
     parser.add_argument("--num-layers", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument(
+        "--channels",
+        nargs="+",
+        default=None,
+        help=(
+            "Space-separated list of telemetry channels to use, e.g. "
+            "--channels Speed Throttle Brake nGear RPM Acceleration. "
+            "Defaults to windows.DEFAULT_CHANNELS if omitted. Accepts any "
+            "derived channel name too (Acceleration, LateralAcceleration)."
+        ),
+    )
     parser.add_argument("--experiment", default="f1-telemetry-lstm-autoencoder")
     parser.add_argument(
         "--register-as", default=None, help="If set, register the trained model under this name"
     )
     args = parser.parse_args()
 
+    channels = args.channels or DEFAULT_CHANNELS
+
     telemetry = pd.read_parquet(args.telemetry_path)
-    X, meta = build_sequences(telemetry, window_size=args.window_size, stride=args.stride)
+    X, meta = build_sequences(
+        telemetry, window_size=args.window_size, stride=args.stride, channels=channels
+    )
     if len(X) == 0:
         raise SystemExit(
             "No windows produced - check --window-size against your laps' sample counts."
         )
 
-    X_scaled, _scaler = _scale_sequences(X)
+    X_scaled, scaler = _scale_sequences(X)
     config = TrainConfig(
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
@@ -78,7 +98,11 @@ def _main() -> None:
                 "learning_rate": config.learning_rate,
                 "n_windows": len(X_scaled),
                 "n_laps": meta[["Driver", "LapNumber"]].drop_duplicates().shape[0],
-                "channels": ",".join(DEFAULT_CHANNELS),
+                # This must reflect the *actual* channels used (from
+                # --channels or the default), not always DEFAULT_CHANNELS -
+                # validate_anomalies.py reads this param back to know which
+                # channels to rebuild windows with for this run.
+                "channels": ",".join(channels),
             }
         )
 
@@ -112,8 +136,14 @@ def _main() -> None:
             log_kwargs["registered_model_name"] = args.register_as
         mlflow.pytorch.log_model(model, **log_kwargs)
 
+        # The scaler is part of the inference pipeline (new telemetry must be
+        # scaled the same way before the model can score it), so it's logged
+        # alongside the model rather than thrown away after training.
+        mlflow.sklearn.log_model(scaler, name="scaler")
+
         run_id = mlflow.active_run().info.run_id
         print(f"Trained on {len(X_scaled)} windows from {len(telemetry)} telemetry rows.")
+        print(f"Channels: {','.join(channels)}")
         print(f"Final val loss: {history['val_loss'][-1]:.5f}")
         print(f"MLflow run ID: {run_id}")
 
