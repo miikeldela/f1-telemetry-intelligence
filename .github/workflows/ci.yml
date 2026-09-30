@@ -19,9 +19,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -e .
 
       - name: Lint with Ruff
         run: ruff check .
 
       - name: Run tests
         run: pytest -v
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build only - no push, no run. Catches a broken Dockerfile or a
+      # dependency that fails to install in the container, without needing
+      # a real MongoDB or a trained model in CI.
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: f1-telemetry-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

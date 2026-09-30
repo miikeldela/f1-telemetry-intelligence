@@ -3,7 +3,8 @@
 Usage:
     python scripts/combine_telemetry.py madrid bahrain monza
     python scripts/combine_telemetry.py madrid bahrain monza --dir data/raw/season_2026
-    python scripts/combine_telemetry.py --dir data/raw/season_2026 --out data/raw/telemetry_all.parquet
+    python scripts/combine_telemetry.py --dir data/raw/season_2026 \
+        --out data/raw/telemetry_all.parquet
 
 Reads data/raw/<name>.parquet for each name given, plus every *.parquet file
 under --dir (if given), and writes the combined result (default:
@@ -21,7 +22,9 @@ RAW_DIR = Path("data/raw")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Combine per-session telemetry parquet files.")
-    parser.add_argument("names", nargs="*", help="Names of data/raw/<name>.parquet files to include")
+    parser.add_argument(
+        "names", nargs="*", help="Names of data/raw/<name>.parquet files to include"
+    )
     parser.add_argument(
         "--dir",
         action="append",
@@ -49,7 +52,8 @@ def main() -> None:
 
     if not paths:
         raise SystemExit(
-            "Usage: python scripts/combine_telemetry.py <name1> <name2> ... [--dir <dir>] [--out <path>]"
+            "Usage: python scripts/combine_telemetry.py <name1> <name2> ... "
+            "[--dir <dir>] [--out <path>]"
         )
 
     # De-duplicate while preserving order, in case a name and --dir overlap.

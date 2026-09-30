@@ -19,3 +19,6 @@ mlruns/
 .env
 .DS_Store
 Thumbs.db
+logs/
+mlflow.db
+mlflow.db-journal
