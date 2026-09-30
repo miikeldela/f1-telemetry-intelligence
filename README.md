@@ -26,6 +26,7 @@ src/f1telemetry/
               autoencoder, trained/tracked via MLflow
   api/        FastAPI service that scores telemetry and serves results
               from MongoDB
+dashboard/    Streamlit app: session overview + per-lap anomaly visualization
 scripts/      Data-fetching, combining, and anomaly-validation utilities
 tests/        Unit + API tests (synthetic data / mongomock, no network
               or live services required)
@@ -130,6 +131,19 @@ curl -X POST localhost:8000/score \
 curl "localhost:8000/anomalies?isAnomaly=true&limit=20"
 curl "localhost:8000/anomalies/summary"
 ```
+
+### 6. Explore results in the dashboard
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Enter a telemetry parquet path and an MLflow run ID in the sidebar and hit
+**Load & score**. Shows a per-session window/anomaly-count summary table,
+plus a chart of any driver's lap with the flagged anomaly windows shaded
+directly on the telemetry trace - the fastest way to actually *look at*
+what the model is (and isn't) catching, rather than reading it off a
+table of numbers.
 
 ## Tests
 
