@@ -15,7 +15,7 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: f1telemetry
-      MLFLOW_TRACKING_URI: file:/app/mlruns
+      MLFLOW_TRACKING_URI: sqlite:////app/mlflow.db
       # Set this to a run ID from your channel-ablation sweep (or the
       # earlier LSTM training) before `docker compose up`, e.g.:
       #   MODEL_RUN_ID=<run id> docker compose up --build
@@ -23,9 +23,14 @@ services:
       WINDOW_SIZE: ${WINDOW_SIZE:-20}
       STRIDE: ${STRIDE:-10}
     volumes:
-      # MLflow's local file-based tracking store - the API loads its model
-      # straight from here, so it has to see the same runs your training
-      # scripts wrote outside of Docker.
+      # mlflow.db holds run metadata (sqlite); mlruns/ holds the actual
+      # logged artifacts (model/scaler files) the metadata points at.
+      # Caveat: artifact_uri in mlflow.db was recorded as an absolute
+      # Windows path at training time, so artifact loading only works
+      # as-is when running directly on the machine that trained the
+      # model - resolving it inside this container is a follow-up, not
+      # yet handled here.
+      - ./mlflow.db:/app/mlflow.db:ro
       - ./mlruns:/app/mlruns:ro
       # Telemetry parquet files, so /score can be pointed at
       # data/raw/telemetry_all.parquet etc. without copying it into the image.

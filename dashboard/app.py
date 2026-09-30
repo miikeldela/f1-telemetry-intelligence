@@ -73,7 +73,7 @@ with st.sidebar:
     st.header("Configuration")
     telemetry_path = st.text_input("Telemetry parquet path", value="data/raw/telemetry_all.parquet")
     run_id = st.text_input("MLflow run ID", value="", help="From `mlflow ui` or the sweep logs")
-    mlflow_uri = st.text_input("MLflow tracking URI", value="file:./mlruns")
+    mlflow_uri = st.text_input("MLflow tracking URI", value="sqlite:///mlflow.db")
     window_size = st.number_input("Window size", min_value=5, max_value=200, value=20)
     stride = st.number_input("Stride", min_value=1, max_value=200, value=10)
     top_fraction = st.slider("Top fraction flagged as anomaly", 0.01, 0.25, 0.05)

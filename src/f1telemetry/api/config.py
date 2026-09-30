@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     mongo_db: str = "f1telemetry"
 
     # MLflow
-    mlflow_tracking_uri: str = "file:./mlruns"
+    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
     # The MLflow run ID to serve. Required for real scoring; the API starts
     # without it (so /health and docs still work) but /score fails clearly
     # until it's set. Update this after picking a winner from the overnight
