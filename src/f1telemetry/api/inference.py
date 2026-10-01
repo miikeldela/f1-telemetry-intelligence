@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from f1telemetry.api.config import Settings
+from f1telemetry.features.scaling import scale_per_session
 from f1telemetry.features.windows import DEFAULT_CHANNELS, build_sequences
 from f1telemetry.models.lstm_autoencoder import reconstruction_errors
 
@@ -26,6 +27,7 @@ class ModelBundle:
     model: object
     scaler: object
     channels: list[str]
+    scaling_strategy: str = "global"
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -45,6 +47,9 @@ def load_model_bundle(settings: Settings) -> ModelBundle:
     run_info = mlflow.get_run(run_id)
     channels_param = run_info.data.params.get("channels")
     channels = channels_param.split(",") if channels_param else DEFAULT_CHANNELS
+    # Older runs predate the per-session fix and never logged this param -
+    # they were always trained with a single pooled ("global") scaler.
+    scaling_strategy = run_info.data.params.get("scaling_strategy", "global")
 
     model = mlflow.pytorch.load_model(f"runs:/{run_id}/model")
     try:
@@ -52,7 +57,13 @@ def load_model_bundle(settings: Settings) -> ModelBundle:
     except Exception:  # noqa: BLE001 - older runs may not have a persisted scaler
         scaler = None
 
-    return ModelBundle(run_id=run_id, model=model, scaler=scaler, channels=channels)
+    return ModelBundle(
+        run_id=run_id,
+        model=model,
+        scaler=scaler,
+        channels=channels,
+        scaling_strategy=scaling_strategy,
+    )
 
 
 def _scale(X: np.ndarray, scaler=None) -> np.ndarray:
@@ -85,7 +96,10 @@ def score_telemetry(
     if len(X) == 0:
         return meta, float("nan")
 
-    X_scaled = _scale(X, bundle.scaler)
+    if bundle.scaling_strategy == "per_session":
+        X_scaled = scale_per_session(X, meta)
+    else:
+        X_scaled = _scale(X, bundle.scaler)
     meta = meta.copy()
     meta["anomaly_error"] = reconstruction_errors(bundle.model, X_scaled)
 

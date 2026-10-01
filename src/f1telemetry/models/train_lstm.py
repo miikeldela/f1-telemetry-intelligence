@@ -1,12 +1,18 @@
 """Train the LSTM autoencoder on full-session telemetry, tracked with MLflow.
 
 Usage:
-    python -m f1telemetry.data.ingest 2024 Bahrain --session R --mode full --out data/raw/telemetry_full.parquet
+    python -m f1telemetry.data.ingest 2024 Bahrain --session R --mode full \
+        --out data/raw/telemetry_full.parquet
     python -m f1telemetry.models.train_lstm data/raw/telemetry_full.parquet
 
     # Override the default channel set (e.g. for a channel-ablation sweep):
     python -m f1telemetry.models.train_lstm data/raw/telemetry_full.parquet \
         --channels Speed Throttle Brake nGear RPM LateralAcceleration
+
+    # Use the original pooled-across-all-sessions scaler instead of the
+    # (now default) per-session one - see features/scaling.py for why
+    # per-session is the default:
+    python -m f1telemetry.models.train_lstm data/raw/telemetry_full.parquet --scaling global
 
 Then inspect runs with:
     mlflow ui
@@ -19,8 +25,8 @@ import mlflow
 import mlflow.pytorch
 import mlflow.sklearn
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 
+from f1telemetry.features.scaling import scale_per_session
 from f1telemetry.features.windows import DEFAULT_CHANNELS, build_sequences
 from f1telemetry.models.lstm_autoencoder import (
     TrainConfig,
@@ -29,19 +35,11 @@ from f1telemetry.models.lstm_autoencoder import (
 )
 
 
-def _scale_sequences(X, scaler: StandardScaler | None = None):
-    n_windows, window_size, n_channels = X.shape
-    flat = X.reshape(-1, n_channels)
-    if scaler is None:
-        scaler = StandardScaler().fit(flat)
-    scaled = scaler.transform(flat).reshape(n_windows, window_size, n_channels)
-    return scaled, scaler
-
-
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Train an LSTM autoencoder on telemetry windows.")
     parser.add_argument(
-        "telemetry_path", help="Parquet file with full-session telemetry (see ingest.py --mode full)"
+        "telemetry_path",
+        help="Parquet file with full-session telemetry (see ingest.py --mode full)",
     )
     parser.add_argument("--window-size", type=int, default=50)
     parser.add_argument("--stride", type=int, default=25)
@@ -58,6 +56,17 @@ def _main() -> None:
             "--channels Speed Throttle Brake nGear RPM Acceleration. "
             "Defaults to windows.DEFAULT_CHANNELS if omitted. Accepts any "
             "derived channel name too (Acceleration, LateralAcceleration)."
+        ),
+    )
+    parser.add_argument(
+        "--scaling",
+        choices=["per_session", "global"],
+        default="per_session",
+        help=(
+            "'per_session' (default): standardize each session against its own "
+            "mean/std, so one circuit's normal speed/braking range doesn't "
+            "swamp another's. 'global': the original single-scaler-for-everything "
+            "approach."
         ),
     )
     parser.add_argument("--experiment", default="f1-telemetry-lstm-autoencoder")
@@ -77,7 +86,18 @@ def _main() -> None:
             "No windows produced - check --window-size against your laps' sample counts."
         )
 
-    X_scaled, scaler = _scale_sequences(X)
+    scaler = None
+    if args.scaling == "per_session":
+        X_scaled = scale_per_session(X, meta)
+    else:
+        from sklearn.preprocessing import StandardScaler
+
+        n_windows, window_size, n_channels = X.shape
+        scaler = StandardScaler().fit(X.reshape(-1, n_channels))
+        X_scaled = scaler.transform(X.reshape(-1, n_channels)).reshape(
+            n_windows, window_size, n_channels
+        )
+
     config = TrainConfig(
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
@@ -100,9 +120,13 @@ def _main() -> None:
                 "n_laps": meta[["Driver", "LapNumber"]].drop_duplicates().shape[0],
                 # This must reflect the *actual* channels used (from
                 # --channels or the default), not always DEFAULT_CHANNELS -
-                # validate_anomalies.py reads this param back to know which
-                # channels to rebuild windows with for this run.
+                # validate_anomalies.py/the API/dashboard read this param
+                # back to know which channels to rebuild windows with.
                 "channels": ",".join(channels),
+                # Same idea: scoring code reads this back to know whether
+                # to recompute per-session scaling fresh or load the
+                # persisted global scaler.
+                "scaling_strategy": args.scaling,
             }
         )
 
@@ -136,14 +160,16 @@ def _main() -> None:
             log_kwargs["registered_model_name"] = args.register_as
         mlflow.pytorch.log_model(model, **log_kwargs)
 
-        # The scaler is part of the inference pipeline (new telemetry must be
-        # scaled the same way before the model can score it), so it's logged
-        # alongside the model rather than thrown away after training.
-        mlflow.sklearn.log_model(scaler, name="scaler")
+        # Per-session scaling is recomputed fresh at scoring time (see
+        # features/scaling.py), so there is nothing to persist here. Only
+        # the "global" strategy has a fitted scaler worth keeping around.
+        if scaler is not None:
+            mlflow.sklearn.log_model(scaler, name="scaler")
 
         run_id = mlflow.active_run().info.run_id
         print(f"Trained on {len(X_scaled)} windows from {len(telemetry)} telemetry rows.")
         print(f"Channels: {','.join(channels)}")
+        print(f"Scaling: {args.scaling}")
         print(f"Final val loss: {history['val_loss'][-1]:.5f}")
         print(f"MLflow run ID: {run_id}")
 

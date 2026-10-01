@@ -22,36 +22,14 @@ from __future__ import annotations
 
 import argparse
 
-import mlflow
-import mlflow.pytorch
-import mlflow.sklearn
 import numpy as np
 import pandas as pd
 
+from f1telemetry.api.config import Settings
+from f1telemetry.api.inference import load_model_bundle, score_telemetry
 from f1telemetry.data.ingest import load_session
-from f1telemetry.features.windows import DEFAULT_CHANNELS, build_sequences
-from f1telemetry.models.lstm_autoencoder import reconstruction_errors
 
 INCIDENT_KEYWORDS = ("FLAG", "SAFETY CAR", "VIRTUAL SAFETY CAR", "RED FLAG", "INCIDENT")
-
-
-def _load_scaler(run_id: str):
-    try:
-        return mlflow.sklearn.load_model(f"runs:/{run_id}/scaler")
-    except Exception as exc:  # noqa: BLE001
-        print(f"No persisted scaler found on run {run_id} ({exc}); refitting one.")
-        return None
-
-
-def _scale(X: np.ndarray, scaler=None):
-    from sklearn.preprocessing import StandardScaler
-
-    n_windows, window_size, n_channels = X.shape
-    flat = X.reshape(-1, n_channels)
-    if scaler is None:
-        scaler = StandardScaler().fit(flat)
-    scaled = scaler.transform(flat).reshape(n_windows, window_size, n_channels)
-    return scaled
 
 
 def _get_incidents(year: int, gp: str, session_type: str):
@@ -69,7 +47,8 @@ def _get_incidents(year: int, gp: str, session_type: str):
         ]
     elif "Message" in race_control.columns:
         pattern = "|".join(INCIDENT_KEYWORDS)
-        incidents = race_control[race_control["Message"].astype(str).str.upper().str.contains(pattern)]
+        messages = race_control["Message"].astype(str).str.upper()
+        incidents = race_control[messages.str.contains(pattern)]
     else:
         incidents = race_control
 
@@ -108,12 +87,17 @@ def _cluster_incidents(incidents: pd.DataFrame, merge_gap: pd.Timedelta) -> pd.D
                 or racing_number == current["RacingNumber"]
             )
         )
-        if current is not None and same_driver and (row["Time"] - current["event_end"]) <= merge_gap:
+        within_gap = current is not None and (row["Time"] - current["event_end"]) <= merge_gap
+        if current is not None and same_driver and within_gap:
             current["event_end"] = row["Time"]
         else:
             if current is not None:
                 events.append(current)
-            current = {"event_start": row["Time"], "event_end": row["Time"], "RacingNumber": racing_number}
+            current = {
+                "event_start": row["Time"],
+                "event_end": row["Time"],
+                "RacingNumber": racing_number,
+            }
     if current is not None:
         events.append(current)
 
@@ -149,31 +133,30 @@ def _main() -> None:
     parser.add_argument("--n-trials", type=int, default=200)
     args = parser.parse_args()
 
-    # Rebuild windows with the SAME channel set this run was trained on
-    # (stored as an MLflow param by train_lstm.py), so an automated sweep
-    # over several channel configs validates each one correctly instead of
-    # silently defaulting every run to DEFAULT_CHANNELS.
-    run_info = mlflow.get_run(args.run_id)
-    channels_param = run_info.data.params.get("channels")
-    channels = channels_param.split(",") if channels_param else DEFAULT_CHANNELS
-    print(f"Using channels from run {args.run_id}: {','.join(channels)}")
+    # Reuse the exact same model-loading/scaling/scoring path as the API
+    # and dashboard (f1telemetry.api.inference), so this script can never
+    # silently drift from how telemetry is actually scored in production -
+    # e.g. it now picks up per_session vs. global scaling automatically
+    # from whatever the run was trained with, instead of always doing a
+    # fresh global StandardScaler fit like this script used to.
+    settings = Settings(model_run_id=args.run_id)
+    bundle = load_model_bundle(settings)
+    print(
+        f"Using channels from run {args.run_id}: {','.join(bundle.channels)} "
+        f"(scaling={bundle.scaling_strategy})"
+    )
 
     telemetry = pd.read_parquet(args.telemetry_path)
-    X, meta = build_sequences(
-        telemetry, window_size=args.window_size, stride=args.stride, channels=channels
+    meta, threshold = score_telemetry(
+        bundle,
+        telemetry,
+        window_size=args.window_size,
+        stride=args.stride,
+        top_fraction=args.top_fraction,
     )
-    if len(X) == 0:
+    if len(meta) == 0:
         raise SystemExit("No windows produced - check --window-size/--stride against the data.")
 
-    scaler = _load_scaler(args.run_id)
-    X_scaled = _scale(X, scaler)
-
-    model = mlflow.pytorch.load_model(f"runs:/{args.run_id}/model")
-    meta = meta.copy()
-    meta["anomaly_error"] = reconstruction_errors(model, X_scaled)
-
-    threshold = meta["anomaly_error"].quantile(1 - args.top_fraction)
-    meta["is_anomaly"] = meta["anomaly_error"] >= threshold
     print(
         f"\nFlagged {meta['is_anomaly'].sum()} / {len(meta)} windows as anomalies "
         f"(top {args.top_fraction:.0%} by reconstruction error, threshold={threshold:.4f})."
@@ -185,7 +168,10 @@ def _main() -> None:
 
     session_cols = [c for c in ["Year", "GrandPrix", "SessionType"] if c in meta.columns]
     if not session_cols:
-        print("\nNo session tags in this telemetry - cannot look up race control messages per session.")
+        print(
+            "\nNo session tags in this telemetry - cannot look up race control "
+            "messages per session."
+        )
         return
 
     tolerance = pd.Timedelta(seconds=args.tolerance_seconds)
@@ -195,7 +181,8 @@ def _main() -> None:
     for session_key, session_meta in meta.groupby(session_cols):
         session_key = session_key if isinstance(session_key, tuple) else (session_key,)
         year, gp, session_type = (
-            dict(zip(session_cols, session_key)).get(c) for c in ["Year", "GrandPrix", "SessionType"]
+            dict(zip(session_cols, session_key)).get(c)
+            for c in ["Year", "GrandPrix", "SessionType"]
         )
 
         incidents, session = _get_incidents(year, gp, session_type)
@@ -216,7 +203,10 @@ def _main() -> None:
         }
         resolved = sum(1 for v in driver_lookup.values() if v is not None)
         if driver_lookup:
-            print(f"  Resolved {resolved} / {len(driver_lookup)} driver numbers to telemetry driver codes.")
+            print(
+                f"  Resolved {resolved} / {len(driver_lookup)} driver numbers "
+                "to telemetry driver codes."
+            )
 
         sessions_data.append((session_meta, events, driver_lookup))
 
@@ -230,7 +220,9 @@ def _main() -> None:
         for session_meta, events, driver_lookup in sessions_data:
             for _, event in events.iterrows():
                 driver_code = (
-                    driver_lookup.get(event["RacingNumber"]) if pd.notna(event["RacingNumber"]) else None
+                    driver_lookup.get(event["RacingNumber"])
+                    if pd.notna(event["RacingNumber"])
+                    else None
                 )
                 pool = _driver_pool(session_meta, driver_code)
                 n_flagged = int(pool["is_anomaly"].sum())
@@ -238,7 +230,9 @@ def _main() -> None:
                     continue
                 if use_random:
                     candidate = pool.sample(
-                        n=min(n_flagged, len(pool)), replace=False, random_state=rng.integers(1_000_000_000)
+                        n=min(n_flagged, len(pool)),
+                        replace=False,
+                        random_state=rng.integers(1_000_000_000),
                     )
                 else:
                     candidate = pool[pool["is_anomaly"]]
@@ -272,7 +266,9 @@ def _main() -> None:
     elif z_score > 1:
         verdict = "Weak signal above chance - directionally promising but not strong evidence yet."
     else:
-        verdict = "Not distinguishable from random flagging - do not claim this validates the model."
+        verdict = (
+            "Not distinguishable from random flagging - do not claim this validates the model."
+        )
     print(f"\nVerdict: {verdict}")
 
 
