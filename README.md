@@ -1,4 +1,4 @@
-# F1 Telemetry Intelligence
+# F1 Telemetry Intelligence - Personal project
 
 Anomaly detection and analytics on Formula 1 telemetry, built on [FastF1](https://github.com/theOehrly/Fast-F1).
 
@@ -183,12 +183,3 @@ likely have no telemetry-visible signature at all, which would mean raw
 reconstruction error is only ever a partial proxy for "incident," however
 the model is tuned. That's the honest conclusion this project is prepared
 to report, rather than iterating until a p-value looks better.
-
-## Roadmap
-
-- [x] Repo, data ingestion, feature engineering, baseline anomaly model
-- [x] LSTM autoencoder + experiment tracking (MLflow: runs, comparison, registry)
-- [x] Serving API (FastAPI) + Docker, results stored in MongoDB
-- [x] Test suite (incl. API tests via mongomock) + GitHub Actions CI
-      (test job + a Docker-build job) + session replay script
-- [ ] Public release
