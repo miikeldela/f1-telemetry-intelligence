@@ -129,7 +129,7 @@ if session_cols:
     session_label = st.selectbox("Session", list(session_labels.keys()))
     session_values = session_labels[session_label]
     session_mask = pd.Series(True, index=meta.index)
-    for col, val in zip(session_cols, session_values):
+    for col, val in zip(session_cols, session_values, strict=True):
         session_mask &= meta[col] == val
     session_meta = meta[session_mask]
 else:
@@ -155,7 +155,7 @@ channel = st.selectbox(
 telemetry = _load_telemetry(telemetry_path)
 lap_row_mask = (telemetry["Driver"] == driver) & (telemetry["LapNumber"] == lap)
 if session_cols:
-    for col, val in zip(session_cols, session_values):
+    for col, val in zip(session_cols, session_values, strict=True):
         lap_row_mask &= telemetry[col] == val
 lap_telemetry = telemetry[lap_row_mask].sort_values("Distance").reset_index(drop=True)
 

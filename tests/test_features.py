@@ -5,7 +5,9 @@ import pytest
 from f1telemetry.features.build_features import build_telemetry_features
 
 
-def _synthetic_telemetry(n: int = 100, driver: str = "VER", lap: int = 1, seed: int = 0) -> pd.DataFrame:
+def _synthetic_telemetry(
+    n: int = 100, driver: str = "VER", lap: int = 1, seed: int = 0
+) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     distance = np.linspace(0, 5000, n)
     speed = 250 + 30 * np.sin(distance / 500) + rng.normal(0, 2, n)
@@ -32,7 +34,14 @@ def test_build_telemetry_features_shape_and_columns():
     features = build_telemetry_features(telemetry, window=10)
 
     assert len(features) > 0
-    for col in ["Speed_roll_mean", "Speed_roll_std", "Speed_delta", "brake_transitions", "gear_shifts"]:
+    expected_cols = [
+        "Speed_roll_mean",
+        "Speed_roll_std",
+        "Speed_delta",
+        "brake_transitions",
+        "gear_shifts",
+    ]
+    for col in expected_cols:
         assert col in features.columns
     assert not features.isna().any().any()
 

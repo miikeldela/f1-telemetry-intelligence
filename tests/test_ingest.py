@@ -5,7 +5,6 @@ and fast in CI.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from f1telemetry.data.ingest import _full_telemetry_with_distance
 

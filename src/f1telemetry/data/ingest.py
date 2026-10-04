@@ -144,7 +144,11 @@ def _main() -> None:
             "like the LSTM autoencoder."
         ),
     )
-    parser.add_argument("--lap", default="fastest", help="'fastest' or a lap number (only used with --mode fastest)")
+    parser.add_argument(
+        "--lap",
+        default="fastest",
+        help="'fastest' or a lap number (only used with --mode fastest)",
+    )
     parser.add_argument("--out", default="data/raw/telemetry.parquet")
     args = parser.parse_args()
 

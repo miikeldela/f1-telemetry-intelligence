@@ -19,6 +19,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection pattern relies on calling Depends() in
+# argument defaults; that's idiomatic here, not a mutable-default bug.
+"src/f1telemetry/api/main.py" = ["B008"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

@@ -91,7 +91,7 @@ def build_sequences(
     meta_rows: list[dict] = []
 
     for key, group in telemetry.groupby(group_keys, sort=False):
-        key_dict = dict(zip(group_keys, key if isinstance(key, tuple) else (key,)))
+        key_dict = dict(zip(group_keys, key if isinstance(key, tuple) else (key,), strict=True))
         group = group.sort_values("Distance").reset_index(drop=True)
         group = _add_derived_channels(group, channels)
         values = group[channels].astype(float).to_numpy()

@@ -6,7 +6,8 @@ for tests (see tests/test_api.py) via FastAPI's dependency_overrides.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from pymongo.collection import Collection
 

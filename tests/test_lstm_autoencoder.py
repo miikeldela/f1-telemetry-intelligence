@@ -7,7 +7,9 @@ from f1telemetry.models.lstm_autoencoder import (
 )
 
 
-def _synthetic_windows(n_normal: int = 40, window_size: int = 20, n_channels: int = 3, seed: int = 0):
+def _synthetic_windows(
+    n_normal: int = 40, window_size: int = 20, n_channels: int = 3, seed: int = 0
+):
     rng = np.random.default_rng(seed)
     t = np.linspace(0, 4 * np.pi, window_size)
     base = np.stack([np.sin(t + i) for i in range(n_channels)], axis=-1)

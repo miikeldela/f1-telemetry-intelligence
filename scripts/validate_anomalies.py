@@ -181,7 +181,7 @@ def _main() -> None:
     for session_key, session_meta in meta.groupby(session_cols):
         session_key = session_key if isinstance(session_key, tuple) else (session_key,)
         year, gp, session_type = (
-            dict(zip(session_cols, session_key)).get(c)
+            dict(zip(session_cols, session_key, strict=True)).get(c)
             for c in ["Year", "GrandPrix", "SessionType"]
         )
 

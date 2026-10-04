@@ -23,7 +23,7 @@ class BaselineAnomalyModel:
         cols = [c for c in features.columns if c not in NON_FEATURE_COLUMNS]
         return features[cols]
 
-    def fit(self, features: pd.DataFrame) -> "BaselineAnomalyModel":
+    def fit(self, features: pd.DataFrame) -> BaselineAnomalyModel:
         x = self._feature_matrix(features)
         self._feature_columns = list(x.columns)
         self._model = IsolationForest(

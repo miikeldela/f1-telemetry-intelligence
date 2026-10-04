@@ -133,7 +133,7 @@ def _main() -> None:
         model, history = train_autoencoder(X_scaled, config)
 
         for epoch, (train_loss, val_loss) in enumerate(
-            zip(history["train_loss"], history["val_loss"])
+            zip(history["train_loss"], history["val_loss"], strict=True)
         ):
             mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss}, step=epoch)
 
