@@ -1,6 +1,21 @@
-# F1 Telemetry Intelligence - Personal project
+# F1 Telemetry Intelligence
 
-Anomaly detection and analytics on Formula 1 telemetry, built on [FastF1](https://github.com/theOehrly/Fast-F1).
+[![CI](https://github.com/miikeldela/f1-telemetry-intelligence/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/miikeldela/f1-telemetry-intelligence/actions/workflows/ci.yml)
+
+End-to-end ML pipeline on Formula 1 car telemetry, from [FastF1](https://github.com/theOehrly/Fast-F1)
+ingestion to a served model: LSTM autoencoder vs. Isolation Forest baseline,
+tracked in MLflow, served with FastAPI + MongoDB, packaged with Docker and
+tested in CI.
+
+**At a glance**
+
+| | |
+| --- | --- |
+| Data | 17 sessions, ~13.3M telemetry rows, 1.3M windows (Speed, Throttle, Brake, nGear, RPM) |
+| Models | LSTM autoencoder (reconstruction error) vs. Isolation Forest baseline |
+| Validation | 1,084 race-control events vs. a random-baseline control, driver-matched |
+| Result | Flagged windows matched incidents *less* often than chance (z = -3.55) — see [Findings](#findings-what-the-validation-taught-me) |
+| Stack | Python, PyTorch, MLflow (tracking + registry), FastAPI, MongoDB, Streamlit, Docker, pytest, GitHub Actions |
 
 The goal: take raw car telemetry (speed, throttle, brake, gear, RPM, DRS,
 position) from real F1 sessions and turn it into engineered features and
@@ -11,7 +26,7 @@ MongoDB, tests and CI.
 ## Status
 
 Core pipeline, LSTM autoencoder + MLflow tracking, and the FastAPI/MongoDB
-serving layer are in place. See [Findings](#findings) below for an honest
+serving layer are in place. See [Findings](#findings-what-the-validation-taught-me) below for an honest
 account of where the model currently stands against real race-control
 incidents — it's not a finished success story yet, and the README says so.
 
@@ -154,7 +169,7 @@ pytest
 API tests use `mongomock` and a tiny untrained model, so the full suite runs
 without a live MongoDB or a real MLflow run.
 
-## Findings
+## Findings: what the validation taught me
 
 The core question this project asks: **does unsupervised reconstruction
 error on car telemetry line up with what race control actually flags as an
